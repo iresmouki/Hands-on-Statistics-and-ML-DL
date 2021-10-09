@@ -1,0 +1,280 @@
+---
+title: "Introduction to regularization"
+output: html_notebook
+---
+
+```{r}
+library(Matrix)
+library(glmnet)
+library(readxl)
+library(dplyr)
+library(caret)
+library(superml)
+```
+
+### **I - Generation of the model :**
+  
+#### **1) Generation of the $X$ matrix:**
+
+The matrix $X \in  \mathbb{M}_{(n \text{,}p)}$, where $n = 10$ and $p = 100$. $X$ is not of full rank. Indeed, this is what we are looking for in this second lab in order to explore the three regularization methods.
+We start by generating our matrix by a normal law $\mathcal{N}(0,4)$ to have about the same number of positive and negative values.
+
+```{r}
+nrow = 10
+ncol = 100
+normal_distribution = rnorm(nrow*(ncol), mean = 0, sd = 2)
+X = matrix(normal_distribution , nrow = nrow, ncol = ncol, byrow = TRUE)
+```
+
+#### **2) Génération de la matrice $Y$ :**
+
+We generate a white noise $\epsilon$ by a normal law $\mathcal{N}(0,2)$ and $\beta = ({-2 , 7 , 0 \cdots , 0})$ the coefficient of our linear regression. Our target variable $Y$ thus satisfies the equation$Y = X\beta + \epsilon$.
+```{r}
+eps = c(rnorm(nrow, mean = 0, sd = sqrt(2)))
+beta = c(-2,7, rep(0,ncol-2))
+Y = X%*%beta + eps
+```
+
+
+#### **3) Calculation of the least squares estimator :**
+
+We try to estimate $\beta$ by computing $\hat{\beta} = (X^t X)^{-1} X^t Y$.
+```{r}
+Beta_chapeau = solve(t(X)%*%X)%*%t(X)%*%Y
+```
+An error is returned. We should not be surprised by this result because $X$ is not of full rank and therefore not invertible, as well as $X^t X$ which is involved in the expression of $\hat{\beta}$.
+
+#### **4)1) Estimation of $\hat{\beta}_{Ridge}$ :**
+
+To remedy the problem of invertibility of $X^t X$ we use the first element of our toolbox which is the **Ridge regularization**. The method consists in estimating $\beta$ by computing $\hat{\beta}_{Ridge} = (X^t X + n\lambda I_n)^{-1} X^t Y$. We can prove the existence of such a $\lambda$ which makes the matrix $X^t X + n\lambda I_n$ invertible by exploiting the fact that $X^t X$ is symmetrical and then use the famous spectral theorem to obtain the diagonal matrix associated to $X^t X$ and then add $n\lambda I_n$ to it.
+We can also show that $\hat{\beta}_{Ridge}$ is the $argmin$ of the minimization problem of $||Y - X\beta||_2^2 + \lambda||\beta||_2^2$. The new estimator has a smaller variance i.e. $Var(\hat{\beta}_{Ridge}) < Var(\hat{\beta})$ but has a non zero bias.
+
+```{r}
+lamda = 1
+Beta_ridge = solve(t(X)%*%X+lamda*diag(ncol))%*%t(X)%*%Y
+```
+
+The problem is thus circumvented for the calculation of $\hat{\beta}$. We will analyze the results of this regression in the rest of the notebook.
+
+#### **4)2) Usage of Elastic Net with $\alpha = 0.5$:**
+
+We can also get around the problem by introducing **the Elastic Net regularization** which introduces a constraint on both $||\beta||_2^2$ and $||\beta||_1$. The $argmin$ sought in this case is that of the minimization problem of $||Y - X\beta||_2^2 + \lambda(\alpha||\beta||_1 + (1 - \alpha)||\beta|_2^2)$. The case $\alpha = 0$ is called **Lasso regularization**.
+```{r}
+res = glmnet(X,Y, alpha = 0.5, lambda = seq(0.5,10,0.1), intercept = FALSE, standardize = FALSE )
+coef = as.data.frame(summary(coef(res, s=0.5)))
+coef$j <- NULL
+coef <- coef %>% 
+  rename(
+    index = i,
+    value = x
+    )
+coef <- coef[order(-abs(coef$value)),]
+coef
+```
+We notice that 91 $\beta_i$ out of 100 are null. This comes mainly from the penalty on $||\beta||_1$ which allows to cancel a coefficient, something that the penalty on $||\beta||_2^2$ does not allow. Note that we find $\hat{\beta}_2 = 4.27$ which is close to the real value for which $\beta_2 = 7$. Also, $\hat{\beta}_1 = -0.96$ close enough to $\beta_1 = -2$.
+
+```{r}
+plot(res, label = TRUE)
+```
+When $\lambda$ tends to 0, the determinant of $(X^t X)$ is close to 0, $(X^t X)^{-1}$ therefore contains very large values which intervene in the expression of $||\beta^\lambda||_1$. We can see in the graph below that $||\beta^\lambda||_1$ increases as $\lambda$ decreases.
+
+#### **5) Utilisation de Lasso ($\alpha = 1$):**
+```{r}
+lasso = glmnet(X, Y, alpha = 1 , lambda = seq(0.5,10,0.1), intercept = FALSE, standardize = FALSE)
+
+coef = as.data.frame(summary(coef(lasso, s=1)))
+coef$j <- NULL
+coef <- coef %>% 
+  rename(
+    index = i,
+    value = x
+    )
+coef <- coef[order(-abs(coef$value)),]
+coef
+```
+we find $\hat{\beta}_2 = 6.06$ which is close to the real value for which $\beta_2 = 7$. Also, $\hat{\beta}_1 = -1.61$ close to $\beta_1 = -2$. The results are better than those returned by Elastic Net and Ridge, because the problem is better suited to perform a Lasso regularization since $\beta = ({-2 , 7 , 0 \cdots , 0})$ and so we gain from wanting to eliminate multiple $\beta_i$. 
+```{r}
+plot(lasso, label = TRUE)
+```
+We obtain the solution of $||Y - X\beta||_2^2 + \lambda|||\beta|_1$ if and only if the **Karush-Kuhn-Tucker (KKT) ** optimality conditions are satisfied. Considering the active set of $\hat{\beta}$ which we note $\hat{\Lambda}$ and which is defined by $\hat{\Lambda} = j \in \{1, \cdots , p\} : \hat{\beta}_j \ne 0\}$. We obtain the following constraints:  \begin{cases} 2X^t(Y-X\hat{\beta}) = \lambda sgn(\hat{\beta}_j) & \quad (\forall j \in \hat{\Lambda})\\ 2 \mid X^t(Y-X\hat{\beta})\mid < \lambda & \quad (\forall j \notin \hat{\Lambda})\end{cases}
+We thus observe that the Lasso estimator is linear in terms of $lambda$. We can even find $K \in \mathbb{N}$ values of $\lambda$ for which the linearity changes.
+Also, we notice that Lasso favors parsimony, something we are interested in here because the number of variables is much higher than the number of observations.
+
+#### **6) Correlated X columns:**
+
+```{r}
+normal_distribution_2 = rnorm(nrow*ncol/2, mean = 0 , sd = 10)
+
+X2 = matrix(normal_distribution_2, nrow = nrow, ncol = ncol, byrow = FALSE)
+X2[,51:100] = X2[,51:100] + rnorm(1, mean = 0 , sd = sqrt(0.01))
+Y2 = X2%*%beta +eps
+```
+
+
+#### **7) Estimation of $\beta$ for $\alpha = 0, 0.5$ and $1$:**
+```{r}
+res = glmnet(X,Y, alpha = 0, lambda = seq(1,10,0.1), intercept = FALSE, standardize = FALSE )
+coef = as.data.frame(summary(coef(res, s=1)))
+coef$j <- NULL
+coef <- coef %>% 
+  rename(
+    index = i,
+    value = x
+    )
+```
+
+```{r}
+coef[coef$index <52,]
+```
+```{r}
+coef[coef$index >51,]
+```
+```{r}
+plot(res, label = TRUE)
+```
+```{r}
+res = glmnet(X,Y, alpha = 1, lambda = seq(1,10,0.1), intercept = FALSE, standardize = FALSE )
+coef = as.data.frame(summary(coef(res, s=1)))
+coef$j <- NULL
+coef <- coef %>% 
+  rename(
+    index = i,
+    value = x
+    )
+```
+
+```{r}
+coef[coef$index <52,]
+```
+```{r}
+coef[coef$index >51,]
+```
+```{r}
+plot(res, label = TRUE)
+```
+```{r}
+res = glmnet(X,Y, alpha = 0.5, lambda = seq(1,10,0.1), intercept = FALSE, standardize = FALSE )
+coef = as.data.frame(summary(coef(res, s=1)))
+coef$j <- NULL
+coef <- coef %>% 
+  rename(
+    index = i,
+    value = x
+    )
+```
+
+```{r}
+coef[coef$index <52,]
+```
+
+```{r}
+coef[coef$index >51,]
+```
+```{r}
+plot(res, label = TRUE)
+```
+The last $p/2$ columns contain the same information as the first $p/2$ columns. However, we notice that Lasso does not choose two highly correlated columns (Example of the 2nd column with the 52nd). The Ridge regularization gives non-zero coefficients to the two correlated columns. In the case where non-influential variables are correlated with influential variables, Lasso could cancel the coefficients of the influential variables, something Ridge does not do.  
+
+
+#### **9) Cross Validation:**
+```{r}
+res_val = cv.glmnet(X, Y, alpha = 0.5)
+MSE_lambda = res_val$cvm
+MSE_lambda = as.data.frame(MSE_lambda)
+Values_lambda = res_val$lambda
+Values_lambda = as.data.frame(Values_lambda)
+```
+
+
+```{r}
+Cross_val = cbind(Values_lambda,MSE_lambda)
+Cross_val <- Cross_val[order(abs(Cross_val$MSE_lambda)),]
+Cross_val
+```
+
+The optimal $\lambda$ by cross validation is equal to $\lambda = 5.03$. It is the one that minimizes the $MSE = 70.81$.
+
+### **II - Real data example:**
+#### **1) Boston housing data:**
+```{r}
+housing_data = read_excel('housing.xlsx')
+Y = housing_data$CRIM
+X = housing_data[,!names(housing_data) %in% c('CRIM')]
+
+res = cv.glmnet(as.matrix(X),Y, alpha = 1)
+
+lambda_opt = res$lambda[which.min(res$cvm)]
+
+coef = as.data.frame(summary(coef(res, s = lambda_opt)))
+coef$j <- NULL
+coef <- coef %>% 
+  rename(
+    index = i,
+    value = x
+    )
+coef <- coef[order(-abs(coef$value)),]
+coef
+```
+
+
+```{r}
+res = glmnet(as.matrix(X),Y, alpha = 1, lambda = 1)
+
+coef = as.data.frame(summary(coef(res, s = 1)))
+coef$j <- NULL
+coef <- coef %>% 
+  rename(
+    index = i,
+    value = x
+    )
+coef <- coef[order(-abs(coef$value)),]
+coef
+```
+
+#### **2) Forest Fire data:**
+```{r}
+forest_data = read.csv('forestfires.csv')
+droplist = c('month', 'day', 'area')
+Y = forest_data[,13]
+X = forest_data[, !colnames(forest_data) %in% droplist]
+```
+
+```{r}
+forest_cv = cv.glmnet(as.matrix(X),Y, alpha = 0.5, intercept = FALSE)
+
+lambda_opt = forest_cv$lambda[which.min(forest_cv$cvm)]
+
+coef = as.data.frame(summary(coef(forest_cv, s = lambda_opt)))
+coef$j <- NULL
+coef <- coef %>% 
+  rename(
+    index = i,
+    value = x
+    )
+coef <- coef[order(-abs(coef$value)),]
+coef <- coef[order(coef$index),]
+coef
+```
+
+```{r}
+lasso_cv = cv.glmnet(as.matrix(X),Y, alpha = 1)
+
+lasso_lambda = lasso_cv$lambda[which.min(lasso_cv$cvm)]
+
+coef = as.data.frame(summary(coef(lasso_cv, s = lasso_lambda)))
+coef$j <- NULL
+coef <- coef %>% 
+  rename(
+    index = i,
+    value = x
+    )
+coef <- coef[order(-abs(coef$value)),]
+coef
+```
+
+```{r}
+res = lm( area ~ Xaxis + Yaxis + FFMC + DMC + DC + ISI + temp + RH + wind + rain, data = forest_data)
+summary(res)
+```
+
+
