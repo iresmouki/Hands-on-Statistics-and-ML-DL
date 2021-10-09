@@ -1,0 +1,169 @@
+---
+title: "Introduction to Linear Regression"
+output: html_notebook
+---
+```{r}
+library(Matrix)
+library(readxl)
+```
+
+### **I - Model generation :**
+#### **1) Full rank condition for $X$  and $({1 , 1 , \cdots , 1}) \notin Im(X)$:**
+```{r}
+nrow = 100
+ncol = 2
+Random_matrix <- function(set)
+{ if (set == "R+") {
+    X = matrix(abs(rnorm(nrow*ncol)), ncol = ncol)
+  } else if (set =="R") {
+    x <- rnorm(200, mean=0, sd=1)
+    X = matrix(unlist(x), byrow=TRUE, nrow=100)
+  }
+  vector <- c()
+  for (i in seq(1, 100, by=1)) {
+    vector[i] <- 1
+  }
+  Image_test <- cbind(X, vector)
+  if (rankMatrix(Image_test)[1] == 3) {
+    return(X)
+  } else {
+    return(Random_matrix())
+  }
+}
+```
+
+```{r}
+X1 = Random_matrix("R+")
+hist(X1)
+```
+
+
+```{r}
+# To check that the distribution looks right, make a histogram of the numbers
+X2 = Random_matrix("R")
+hist(X2)
+```
+From the histograms, the values are more or less evenly distributed between positive and negative.  
+
+\  
+
+#### **3) Generation of $Y = X\beta + \epsilon$ :**
+```{r}
+Beta = c(-2,7)
+Epsilon = c(rnorm(nrow, mean = 0, sd = sqrt(2)))
+Y1 <- X1 %*% Beta + Epsilon
+Y2 <- X2 %*% Beta + Epsilon
+```
+  
+
+```{r}
+plot(X1[,1],Y1, main = "Y against X1 (exponential distribution)", col = "red")
+x=(max(X1[,1])-min(X1[,1]))*(1:nrow)/nrow+min(X1[,1])
+y=-2*x
+points(x,y,type='l', col = "blue")
+
+plot(X1[,2],Y1, main = "Y against X2 (exponential distribution)", col = "red")
+x=(max(X1[,2])-min(X1[,2]))*(1:nrow)/nrow+min(X1[,2])
+y=7*x
+points(x,y,type='l', col = "blue")
+
+plot(X2[,1],Y2, main = "Y against X1 (centered normal distribution)", col = "red")
+x=(max(X2[,1])-min(X2[,1]))*(1:nrow)/nrow+min(X2[,1])
+y=-2*x
+points(x,y,type='l', col = "blue")
+
+plot(X2[,2],Y2, main = "Y against X2 (centered normal distribution)", col = "red")
+x=(max(X2[,2])-min(X2[,2]))*(1:nrow)/nrow+min(X2[,2])
+y=7*x
+points(x,y,type='l', col = "blue")
+```
+\  
+
+#### **4) Estimation of $\hat{\beta} = (X^t X)^{-1} X^t Y$:**
+
+```{r}
+Beta_chapeau = solve(t(X1)%*%X1)%*%t(X1)%*%Y1
+Beta_chapeau
+```
+
+```{r}
+res=lm(Y1~X1[,1]+X1[,2])
+summary(res)
+```
+\  
+
+#### **5) Adding the column $({1 , 1 , \cdots , 1})$ à $X$:**
+```{r}
+vector <- c()
+for (i in seq(1, 100, by=1)) {
+    vector[i] <- 1
+  }
+X1_intercept <- cbind(X1, vector)
+Beta_chapeau = solve(t(X1_intercept)%*%X1_intercept)%*%t(X1_intercept)%*%Y1
+Beta_chapeau
+```
+
+```{r}
+Y1_chapeau <- X1_intercept %*% Beta_chapeau
+```
+
+\  
+
+#### **6) Calculation of statistical quantities:**
+```{r}
+#Residual Standard error (Like Standard Deviation)
+p = ncol +1 #Subtract one to ignore intercept
+SSE = sum((Y1-Y1_chapeau)**2)
+n = nrow
+RSE = sqrt(SSE/(n-p)) #Residual Standard Error
+RSE
+```
+
+```{r}
+#Multiple R-Squared (Coefficient of Determination)
+R2 = sum((Y1_chapeau - mean(Y1))**2)/sum((Y1 - mean(Y1))**2)
+R2
+```
+
+```{r}
+inverse = solve(t(X1_intercept)%*%X1_intercept)
+diag <- diag(inverse)
+sigma2_beta <- RSE*diag
+sigma2_beta
+```
+
+
+```{r}
+#Standard error of Beta_j
+T_value <- Beta_chapeau/sqrt(sigma2_beta)
+T_value
+```
+
+
+```{r}
+F <- (R2*(nrow-p))/((1-R2)*(p-1))
+F
+```
+### **II - Real data example:**
+### **1) Boston Housing data:**
+```{r}
+housing_data = read_excel("housing.xlsx")
+res = lm(CRIM ~ ZN + INDUS  + NOX + RM + AGE + DIS + RAD + TAX + PTRATIO + B + LSTAT + MEDV , data = housing_data)
+summary(res)
+```
+\  
+
+### 2) **Forest fires data:**
+```{r}
+forest_data = read.csv('forestfires.csv')
+res = lm(area ~ X.axis + Y.axis + month + day + FFMC + DMC + DC + ISI + temp + RH + wind + rain, data = forest_data)
+summary(res)
+```
+```{r}
+forest_data = read.csv('forestfires.csv')
+res = lm(log(1+area) ~ X.axis + Y.axis + month + day + FFMC + DMC + DC + ISI + temp + RH + wind + rain, data = forest_data)
+summary(res)
+```
+
+
+
